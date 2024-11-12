@@ -1,0 +1,264 @@
+mkdir task_management_api
+cd task_management_api
+npm init -y
+npm install apollo-server graphql
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+// schema.js
+const { gql } = require('apollo-server');
+
+const typeDefs = gql`
+  type Task {
+    id: ID!
+    title: String!
+    description: String
+    completed: Boolean!
+  }
+
+  type Query {
+    tasks: [Task]
+    task(id: ID!): Task
+  }
+
+  type Mutation {
+    addTask(title: String!, description: String): Task
+    updateTask(id: ID!, title: String, description: String, completed: Boolean): Task
+    deleteTask(id: ID!): Boolean
+  }
+`;
+
+module.exports = typeDefs;
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+// server.js
+const { ApolloServer } = require('apollo-server');
+const typeDefs = require('./schema');
+const resolvers = require('./resolvers');
+
+const server = new ApolloServer({ typeDefs, resolvers });
+
+server.listen().then(({ url }) => {
+  console.log(`🚀 Server ready at ${url}`);
+});
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+// resolvers.js
+
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+
+const TASKS_FILE = './tasks.json';
+
+// Helper function to load tasks from the JSON file
+const loadTasks = () => {
+  try {
+    const data = fs.readFileSync(TASKS_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    // If file doesn't exist or is empty, return an empty array
+    return [];
+  }
+};
+
+// Helper function to save tasks to the JSON file
+const saveTasks = (tasks) => {
+  fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
+};
+
+// Load tasks initially
+let tasks = loadTasks();
+
+const resolvers = {
+  Query: {
+    tasks: () => tasks,
+    task: (_, { id }) => tasks.find(task => task.id === id),
+  },
+
+  Mutation: {
+    addTask: (_, { title, description }) => {
+      const newTask = {
+        id: uuidv4(),
+        title,
+        description: description || '',
+        completed: false,
+      };
+      tasks.push(newTask);
+      saveTasks(tasks); // Save to JSON file
+      return newTask;
+    },
+
+    updateTask: (_, { id, title, description, completed }) => {
+      const taskIndex = tasks.findIndex(task => task.id === id);
+      if (taskIndex === -1) throw new Error("Task not found");
+
+      const updatedTask = {
+        ...tasks[taskIndex],
+        title: title !== undefined ? title : tasks[taskIndex].title,
+        description: description !== undefined ? description : tasks[taskIndex].description,
+        completed: completed !== undefined ? completed : tasks[taskIndex].completed,
+      };
+      tasks[taskIndex] = updatedTask;
+      saveTasks(tasks); // Save to JSON file
+      return updatedTask;
+    },
+
+    deleteTask: (_, { id }) => {
+      const taskIndex = tasks.findIndex(task => task.id === id);
+      if (taskIndex === -1) return false;
+
+      tasks.splice(taskIndex, 1);
+      saveTasks(tasks); // Save to JSON file
+      return true;
+    },
+  },
+};
+
+module.exports = resolvers;
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+
+
+# deploy/deploy.yml
+- name: Deploy Task Management API locally
+  hosts: localhost
+  tasks:
+    - name: Ensure Node.js is installed
+      ansible.builtin.shell: |
+        curl -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+      args:
+        creates: /usr/bin/node
+
+    - name: Install npm dependencies
+      ansible.builtin.command: npm install
+      args:
+        chdir: "{{ playbook_dir }}/.."
+    
+    - name: Run the GraphQL API
+      ansible.builtin.shell: |
+        nohup node server.js &
+      args:
+        chdir: "{{ playbook_dir }}/.."
+      async: 10
+      poll: 0
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+# deploy/inventory
+[local]
+localhost ansible_connection=local
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+# deploy/ansible.cfg
+[defaults]
+inventory = inventory
+host_key_checking = False
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+
+# Task Management API Setup Guide
+
+## Directory Structure
+
+The `task_management_api` directory should have the following structure:
+
+```
+task_management_api/
+├── deploy/
+│   ├── ansible.cfg
+│   ├── inventory
+│   └── deploy.yml
+├── server.js
+├── schema.js
+├── resolvers.js
+├── package.json
+└── package-lock.json
+```
+
+1. Run the playbook:
+
+   ```bash
+   cd task_management_api/deploy
+   ansible-playbook deploy.yml -i inventory
+   ```
+
+2. Verify API is running:
+
+   Open `http://localhost:4000/graphql` in a browser to access the GraphQL playground.
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+
+
+Mutation 
+
+
+
+
+mutation {
+  addTask(title: "Sample Task", description: "This is a sample task") {
+    id
+    title
+    description
+    completed
+  }
+}
+
+
+
+
+query {
+  tasks {
+    id
+    title
+    description
+    completed
+  }
+}
+
+
+
+
+
+query {
+  task(id:"") {
+    id
+    title
+    description
+    completed
+  }
+}
+
+
+
+mutation {
+  updateTask(id:"", title: "Updated Task Title", description: "Updated description", completed: true) {
+    id
+    title
+    description
+    completed
+  }
+}
+
+
+mutation {
+  deleteTask(id:"")
+}
+
+
+

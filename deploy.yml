@@ -1,0 +1,23 @@
+# deploy/deploy.yml
+- name: Deploy Task Management API locally
+  hosts: localhost
+  tasks:
+    - name: Ensure Node.js is installed
+      ansible.builtin.shell: |
+        curl -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+      args:
+        creates: /usr/bin/node
+
+    - name: Install npm dependencies
+      ansible.builtin.command: npm install
+      args:
+        chdir: "{{ playbook_dir }}/.."
+    
+    - name: Run the GraphQL API
+      ansible.builtin.shell: |
+        nohup node server.js &
+      args:
+        chdir: "{{ playbook_dir }}/.."
+      async: 10
+      poll: 0
